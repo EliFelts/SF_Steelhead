@@ -22,14 +22,19 @@ daily.dat <- read_feather("data/daily")
 
 individuals.dat <- read_feather("data/individuals")
 
+lastweek <- individuals.dat %>% 
+  filter(sf_entry_final>=today()-days(7))
+
 # make the slider input for date range
+
+slider_min <- as.Date(min(individuals.dat$sf_entry_final))
 
 user_dates <-     
   sliderInput(inputId = "user_dates",
               label="Choose a Date Range",
-              min=today()-years(1),
+              min=slider_min,
               max=today(),
-              value=c(today()-months(6),today()))
+              value=c(today()-months(1),today()))
 
 
 
@@ -54,17 +59,43 @@ ui <- page_navbar(
     )),
     
     nav_panel("Explore Data",
+            
+              #   
+              # card(card_body(
+              #   strong("Unique PIT Tags, Current Spawn Year: "),
+              #   textOutput("unique_value")
+              # )),
               
+              layout_columns(
+                
+                value_box(
+                  "Spawn Year to date",
+                  nrow(individuals.dat)
+                  
+                  
+                ),
+                
+                value_box(
+                  "New in the Last Week",
+                  nrow(lastweek)
+                  
+                )
+                
+                ),
+              
+              page_fillable(
+               
+              layout_columns(
+                   
               card(card_header("Discharge at Stites"),
                                plotlyOutput("flow_plot"),
                    full_screen = T),
+                
              card(card_header("Unique Fish In"),
                   plotlyOutput("entry_plot"),
-                  full_screen = T),
-             card(card_body(
-               strong("Unique PIT Tags, Current Spawn Year: "),
-               textOutput("unique_value")
-             ))
+                  full_screen = T)
+              )
+              )
               
     )
     
@@ -135,13 +166,6 @@ server <- function(input,output,session){
     
   })
   
-  # render a value for card with total unique fish in
-  
-  output$unique_value <- renderText({
-    
-    nrow(individuals.dat)
-    
-  })
   
 }
 
