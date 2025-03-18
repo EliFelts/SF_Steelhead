@@ -6,10 +6,19 @@ library(DT)
 library(shinyWidgets)
 library(conflicted)
 library(plotly)
+library(arrow)
+library(dataRetrieval)
 
 conflicts_prefer(DT::renderDT,
                  dplyr::filter,
                  dplyr::lag)
+
+
+# do the stites data update in here?
+
+
+
+# make the slider input for date range
 
 user_dates <-     
   sliderInput(inputId = "user_dates",
@@ -20,7 +29,7 @@ user_dates <-
 
 
 
-ui <- page_navbar(
+ui <- page_sidebar(
   
   title="South Fork Clearwater Steelhead",
   
@@ -39,14 +48,14 @@ ui <- page_navbar(
     )
     
   )
-    
 
-  
-  
 )
 
+server <- function(input,output,session){
+  
+  
+}
 
-
-shinyApp(ui, function(input, output) {})
+shinyApp(ui, server)
 
 

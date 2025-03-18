@@ -1,0 +1,210 @@
+library(tidyverse)
+library(sf)
+library(leaflet)
+library(arrow)
+library(plotly)
+library(dataRetrieval)
+library(patchwork)
+
+
+# want to update to do this by code, but for 
+# now the first step is to query detections
+# within the South Fork Clearwater during
+# the spawn year of interest and preceding year,
+# and save those results in the detections folder
+# of this project. This code will filter
+# to get only the most recent spawn year available
+# and will drop any detections of fish tagged
+# as juveniles that are detected in the 
+# same year as tagging
+
+# once that part is done, read in the output here
+
+dat <- read_csv("data/SF Clearwater STHD.csv") %>% 
+  mutate(observation_sitecode=word(`Site Name`,1,sep=" "),
+         release_sitecode=word(`Release Site Name`,1,sep=" "),
+         observation_datetime=as.POSIXct(`Obs Time Value`,
+                                         format = "%m/%d/%Y %I:%M:%S %p", 
+                                         tz = "America/Los_Angeles"),
+         observation_month=month(observation_datetime),
+         observation_year=year(observation_datetime),
+         spawn_year=ifelse(observation_month>6,(observation_year+1),
+                           observation_year),
+         release_datetime=mdy(`Release Date MMDDYYYY`),
+         release_year=year(release_datetime),
+         yrs_at_large=observation_year-release_year) %>% 
+  select(pit_id=`Tag Code`,rear_type=`Rear Type Code`,
+         release_sitecode,release_lifestage=`Mark Life Stage Value`,
+         release_datetime,release_year,
+         observation_sitecode,
+         observation_datetime,observation_month,
+         observation_year,
+         yrs_at_large,
+         spawn_year,
+         length_mm=`Mark Length mm`) %>% 
+  mutate(most_recent=max(spawn_year,na.rm=T)) %>% 
+  filter(spawn_year==most_recent) %>% 
+  filter(yrs_at_large!=0 | release_lifestage != "Juvenile")
+
+# get a table of unique pit
+# ids to be run through the PTAGIS complete
+# tag history 
+
+int.dat <- dat %>% 
+  ungroup() %>% 
+  select(pit_id) %>% 
+  distinct()
+
+# write to the int_files folder
+
+write.table(int.dat,"data/inseason_int.txt",
+            quote=FALSE,row.names=FALSE,col.names=FALSE)
+
+# another part to automate, run
+# that output text file through the 
+# complete tag history in PTAGIS
+# and export the results to the
+# taghistory folder
+
+# make a key for life stage at tagging
+# based on pit id
+
+lifestage.key <- dat %>% 
+  group_by(pit_id) %>% 
+  summarize(life_stage=first(release_lifestage))
+
+# now read in the interrogation results for the adult-marked
+# and compress to unique day/event site combos
+
+inseason.int <- read_csv("data/Complete Tag History.csv") %>% 
+  mutate(observation_datetime=as.POSIXct(`Event Date Time Value`,
+                                         format = "%m/%d/%Y %I:%M:%S %p", 
+                                         tz = "America/Los_Angeles"),
+         observation_date=as_date(observation_datetime)) %>% 
+  select(pit_id=`Tag Code`,obs_type=`Event Type Name`,
+         observation_sitecode=`Event Site Code Value`,
+         observation_datetime,observation_date,
+         length_mm=`Event Length mm`) %>% 
+  group_by(pit_id,observation_date,observation_sitecode) %>% 
+  slice(which.min(observation_datetime)) %>% 
+  left_join(lifestage.key,by="pit_id")
+
+
+# will need to join those detections to PTAGIS info, 
+# so we can get at rkm to see if those tagged as
+# juveniles were ever detected
+# downstream, indicating they actually went to the ocean
+
+ptagis.dat <- read_feather("data/ptagis_sites") %>% 
+  group_by(site_code) %>% 
+  slice(which.max(total_rkm))
+
+# also list out site code ids for interrogation
+# sites that indicate the South Fork overall,
+# and those that are at the mouth so detections
+# are interpreted as entry into South Fork
+
+sf_logical <- c("SC1","SC2","SC3","SC4")
+
+sfentry_logical <- c("SC1","SC2")
+
+# So now split out and deal with juveniles
+
+juv.dat1 <- inseason.int %>% 
+  filter(life_stage=="Juvenile",
+         obs_type=="Observation") %>% 
+  left_join(ptagis.dat,by=c("observation_sitecode"="site_code")) %>% 
+  group_by(pit_id,observation_datetime) %>%
+  arrange(pit_id,observation_datetime) %>% 
+  group_by(pit_id) %>% 
+  mutate(last_site=last(observation_sitecode),
+         lowest_rkm=min(total_rkm))
+
+# So now filter for those records that are fish that were detected
+# at least as far down as lower granite and their last detection was in 
+# the south fork
+
+juv.filter <- juv.dat1  %>% 
+  filter(lowest_rkm<=695,
+         last_site %in% sf_logical)  %>% 
+  group_by(pit_id,observation_date,observation_sitecode) %>% 
+  slice(which.min(observation_datetime)) %>% 
+  select(pit_id,obs_type,observation_sitecode,
+         observation_datetime,observation_date) %>% 
+  mutate(length_mm=as.numeric(NA),
+         mark_stage="Juvenile")  
+
+
+# pull out the adults from the initial int data
+# distinguish their mark stage then bind
+# to the filtered juvenile data
+
+int.complete <- inseason.int %>% 
+  filter(life_stage=="Adult") %>% 
+  rename(mark_stage=life_stage) %>% 
+  bind_rows(juv.filter)
+
+# now summarize relevant values
+
+sf_individuals.summary <- int.complete %>% 
+  mutate(sf=ifelse(observation_sitecode %in% sf_logical,TRUE,
+                   FALSE),
+         sf_entry=ifelse(observation_sitecode %in% sfentry_logical,
+                         TRUE,FALSE)) %>% 
+  group_by(pit_id) %>% 
+  summarize(lgr_final=last(observation_datetime[observation_sitecode=="GRA"]),
+            sf_first=first(observation_datetime[sf==TRUE]),
+            sf_entry_final=last(observation_datetime[sf_entry==TRUE]),
+            sf_diff=as.numeric(sf_entry_final-sf_first,units="days"),
+            length_mm=mean(length_mm,na.rm=T),
+            mark_stage=first(mark_stage))
+
+sf_entry.summary <- sf_individuals.summary %>% 
+  mutate(sf_final_date=as_date(sf_entry_final)) %>% 
+  group_by(sf_final_date) %>% 
+  summarise(n=n()) %>% 
+  ungroup() %>% 
+  mutate(sy_total=sum(n),
+         cumulative_total=cumsum(n),
+         daily_prop=n/sy_total,
+         daily_cumulative=cumsum(daily_prop),
+         spawn_year=2025)
+
+
+# now also grab sf flow data from USGS gaging station
+
+stites.site <- "13338500"
+
+# temp is coded as 00010, discharge as 00060,
+# we'll go for both of those
+
+parm.cd <- c("00010","00060")
+
+# put today's date into text format
+# to feed into the query of daily
+# water data
+
+today.text <- as.character(today(tz="America/Los_Angeles"))
+
+stites.daily <- readNWISdv(siteNumber=stites.site,
+                           parameterCd = parm.cd,
+                           startDate="1990-01-01",
+                           endDate=today.text) %>% 
+  select(date=Date,
+         mean_temp=X_00010_00003,
+         mean_discharge=X_00060_00003) %>% 
+  mutate(date=as_date(date))
+
+
+stites.dat <- stites.daily %>% 
+  filter(date>=min(sf_entry.summary$sf_final_date,na.rm=T),
+         date<=today()) %>% 
+  mutate(group=1)
+
+write_feather(stites.dat,"data/stites_flow")
+
+write_feather(sf_individuals.summary,
+              "data/individuals")
+
+write_feather(sf_entry.summary,
+              "data/daily")
