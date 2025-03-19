@@ -208,3 +208,127 @@ write_feather(sf_individuals.summary,
 
 write_feather(sf_entry.summary,
               "data/daily")
+
+
+# bring in completed year; this was originally constructed 
+# for everything available through 2024; I found
+# there weren't a lot of these fish tagged until
+# spawn year 2018 so this filters for completed
+# years from 2018 on
+
+complete_ind <- read_feather("data/completedyrs_individual") %>% 
+  filter(spawn_year>=2018,spawn_year<first(sf_entry.summary$spawn_year)) %>% 
+  mutate()
+
+complete_daily <- read_feather("data/completedyrs_daily") %>% 
+  filter(spawn_year>=2018,spawn_year<first(sf_entry.summary$spawn_year)) %>% 
+  ungroup() %>% 
+  complete(sf_final_date=seq(as_date("2017-07-01"),as_date("2024-06-30"),
+                    by="day")) %>% 
+  mutate(obs_year=year(sf_final_date),
+         obs_month=month(sf_final_date),
+         spawn_year=ifelse(obs_month>6,(obs_year+1),
+                           obs_year))%>% 
+  group_by(spawn_year) %>% 
+  fill(sy_total,.direction = "updown") %>% 
+  mutate(n=ifelse(is.na(n),0,n),
+         daily_running_total=cumsum(n),
+         daily_prop=n/sy_total,
+         daily_cumulative=cumsum(daily_prop),
+         daily_percent=daily_cumulative*100) %>% 
+  mutate(day_of_year=yday(sf_final_date),
+         dummy_sfentry_date=if_else(day_of_year<182,
+                                    as.Date(day_of_year,origin="1977-12-31"),
+                                    as.Date(day_of_year,origin="1976-12-31"))) %>% 
+  filter(!day_of_year==182) %>% 
+  mutate(plot_category="Completed Spawn Years")
+
+
+# get estimates of how much of the run has been
+# completed on a given day of the year for use
+# in estimating what the total will be based
+# on year-to-date numbers in given spawn year
+
+complete_reference <- complete_daily %>% 
+  group_by(dummy_sfentry_date) %>% 
+  summarize(median_cum=median(daily_cumulative),
+            min_cum=min(daily_cumulative),
+            max_cum=max(daily_cumulative),
+            min_dailyprop=min(daily_prop),
+            median_dailyprop=median(daily_prop),
+            max_daily_prop=max(daily_prop))
+
+
+complete_current <- sf_entry.summary %>% 
+  complete(sf_final_date=seq(as_date("2024-07-01"),today(),
+                            by="day")) %>% 
+  mutate(obs_year=year(sf_final_date),
+         obs_month=month(sf_final_date),
+         spawn_year=ifelse(obs_month>6,(obs_year+1),
+                           obs_year))%>% 
+  group_by(spawn_year) %>% 
+  mutate(n=ifelse(is.na(n),0,n),
+         daily_running_total=cumsum(n),
+         daily_prop=n/sy_total,
+         daily_cumulative=cumsum(daily_prop),
+         daily_percent=daily_cumulative*100) %>% 
+  mutate(day_of_year=yday(sf_final_date),
+         dummy_sfentry_date=if_else(day_of_year<182,
+                                    as.Date(day_of_year,origin="1977-12-31"),
+                                    as.Date(day_of_year,origin="1976-12-31"))) %>% 
+  filter(!day_of_year==182) %>% 
+  select(spawn_year,sf_final_date,n,dummy_sfentry_date) %>% 
+  mutate(daily_cumulative_n=cumsum(n))
+
+
+projected_totals <- complete_current %>% 
+  slice(which.max(sf_final_date)) %>% 
+  left_join(complete_reference,by="dummy_sfentry_date") %>% 
+  mutate(max_sy_total=daily_cumulative_n/min_cum,
+         median_sy_total=daily_cumulative_n/median_cum,
+         min_sy_total=daily_cumulative_n/max_cum) %>% 
+  select(spawn_year,min_sy_total,median_sy_total,
+         max_sy_total) %>% 
+  pivot_longer(min_sy_total:max_sy_total,
+               values_to = "sy_total") %>% 
+  mutate(projection_category=str_to_title(word(name,1,sep="_")))
+
+# make the projections points that can go on the plot
+
+projected_pts <- projected_totals %>% 
+  mutate(sf_final=as_date("2025-05-01"),
+         dummy_sfentry_date=as_date("1978-05-01"))
+
+# now what about putting this on a plot comparing to previous years
+
+alldaily <- complete_daily %>% 
+  select(spawn_year,sf_final_date,n,dummy_sfentry_date,
+         daily_cumulative_n=daily_running_total) %>% 
+  bind_rows(complete_current)
+
+# dump out additional parts needed for shiny
+
+write_feather(alldaily,"data/alldaily")
+write_feather(projected_pts,"data/projections")
+
+
+# move this to Shiny app.
+
+## get tooltip for points also
+
+cumplot.all <- alldaily %>% 
+  ggplot(aes(x=dummy_sfentry_date,y=daily_cumulative_n,
+             group=spawn_year,color=as.factor(spawn_year)))+
+  geom_line(aes(text=str_c(" Date:",format(dummy_sfentry_date, "%b %d"),
+                           "<br>",
+                           "Spawn Year:",spawn_year,
+                           "<br>",
+                           "Number In:",round(daily_cumulative_n),sep=" ")))+
+  geom_point(data=projected_pts,
+             aes(x=dummy_sfentry_date,y=sy_total))+
+  theme_bw()+
+  scale_x_date(date_breaks = "1 month", date_labels="%b")+
+  labs(x="Date of entry to South Fork Clearwater",
+       y="Percent of Run Completed",
+       color="")
+cumplot.all

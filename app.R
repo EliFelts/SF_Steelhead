@@ -11,7 +11,8 @@ library(dataRetrieval)
 
 conflicts_prefer(DT::renderDT,
                  dplyr::filter,
-                 dplyr::lag)
+                 dplyr::lag,
+                 plotly::layout)
 
 
 # read in data 
@@ -21,6 +22,10 @@ flow.dat <- read_feather("data/stites_flow")
 daily.dat <- read_feather("data/daily")
 
 individuals.dat <- read_feather("data/individuals")
+
+alldaily.dat <- read_feather("data/alldaily")
+
+projections.dat <- read_feather("data/projections")
 
 lastweek <- individuals.dat %>% 
   filter(sf_entry_final>=today()-days(7))
@@ -93,7 +98,12 @@ ui <- page_navbar(
                 
              card(card_header("Unique Fish In"),
                   plotlyOutput("entry_plot"),
+                  full_screen = T),
+             
+             card(card_header("Year-to-date Totals"),
+                  plotlyOutput("comp_plot"),
                   full_screen = T)
+             
               )
               )
               
@@ -166,6 +176,53 @@ server <- function(input,output,session){
     
   })
   
+  # make the plot comparing cumulative numbers of pit tags entering among
+  # years and showing projections 
+  
+  compplot_reactive <- reactive({
+
+    
+    plot_lim.dat <- tibble(min_doy=yday(min(input$user_dates)),
+                           max_doy=yday(max(input$user_date))) %>%
+      mutate(plot_min=if_else(min_doy<182,
+                              as.Date(min_doy,origin="1977-12-31"),
+                              as.Date(min_doy,origin="1976-12-31")),
+             plot_max=if_else(max_doy<182,
+                              as.Date(max_doy,origin="1977-12-31"),
+                              as.Date(max_doy,origin="1976-12-31")))
+  
+    
+    comp.plot <- alldaily.dat %>% 
+      ggplot(aes(x=dummy_sfentry_date,y=daily_cumulative_n,
+                 group=spawn_year,color=as.factor(spawn_year)))+
+      geom_line(aes(text=str_c(" Date:",format(dummy_sfentry_date, "%b %d"),
+                               "<br>",
+                               "Spawn Year:",spawn_year,
+                               "<br>",
+                               "Number In:",round(daily_cumulative_n),sep=" ")))+
+      geom_point(data=projections.dat,
+                 aes(x=dummy_sfentry_date,y=sy_total))+
+      theme_bw()+
+      scale_x_date(date_breaks = "1 month", date_labels="%b",
+                   limits=c(as.Date(plot_lim.dat$plot_min),as.Date(plot_lim.dat$plot_max)))+
+      labs(x="Date of entry to South Fork Clearwater",
+           y="Percent of Run Completed",
+           color="")
+    comp.plot
+    
+  })
+  
+  # Render the comp plot as a plotly object
+  
+  output$comp_plot <- renderPlotly({
+    
+    plot1 <- compplot_reactive()
+    
+    ggplotly(plot1,
+             tooltip=c("text")) %>% 
+      layout(hovermode="x")
+    
+  })
   
 }
 
