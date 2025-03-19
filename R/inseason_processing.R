@@ -325,10 +325,17 @@ cumplot.all <- alldaily %>%
                            "<br>",
                            "Number In:",round(daily_cumulative_n),sep=" ")))+
   geom_point(data=projected_pts,
-             aes(x=dummy_sfentry_date,y=sy_total))+
+             aes(x=dummy_sfentry_date,y=sy_total,
+                 text=str_c(" Date:",format(dummy_sfentry_date, "%b %d"),
+                            "<br>",
+                            "Projected",projection_category,round(sy_total),
+                            sep=" ")))+
   theme_bw()+
   scale_x_date(date_breaks = "1 month", date_labels="%b")+
   labs(x="Date of entry to South Fork Clearwater",
        y="Percent of Run Completed",
        color="")
 cumplot.all
+
+ggplotly(cumplot.all, tooltip=c("text","label")) %>% 
+  layout(hovermode="x")

@@ -201,7 +201,11 @@ server <- function(input,output,session){
                                "<br>",
                                "Number In:",round(daily_cumulative_n),sep=" ")))+
       geom_point(data=projections.dat,
-                 aes(x=dummy_sfentry_date,y=sy_total))+
+                 aes(x=dummy_sfentry_date,y=sy_total,
+                     text=str_c(" Date:",format(dummy_sfentry_date, "%b %d"),
+                                "<br>",
+                                "Projected",projection_category,round(sy_total),
+                                sep=" ")))+
       theme_bw()+
       scale_x_date(date_breaks = "1 month", date_labels="%b",
                    limits=c(as.Date(plot_lim.dat$plot_min),as.Date(plot_lim.dat$plot_max)))+
@@ -219,8 +223,7 @@ server <- function(input,output,session){
     plot1 <- compplot_reactive()
     
     ggplotly(plot1,
-             tooltip=c("text")) %>% 
-      layout(hovermode="x")
+             tooltip=c("text")) 
     
   })
   
