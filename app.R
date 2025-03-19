@@ -8,7 +8,9 @@ library(conflicted)
 library(plotly)
 library(arrow)
 library(dataRetrieval)
+library(bsicons)
 library(viridis)
+library(fontawesome)
 
 conflicts_prefer(DT::renderDT,
                  dplyr::filter,
@@ -37,7 +39,9 @@ run_stats <- alldaily.dat %>%
   mutate(total_n=sum(n),
          prop_complete=daily_cumulative_n/total_n) %>% 
   group_by(dummy_sfentry_date) %>% 
-  summarize(median_percentcomplete=round(median(prop_complete)*100))
+  summarize(median_percentcomplete=round(median(prop_complete)*100),
+            min_percentcomplete=round(min(prop_complete)*100),
+            max_percentcomplete=round(max(prop_complete)*100))
 
 today_dummy <- tibble(date=today()) %>% 
   mutate(doy=yday(date),
@@ -89,31 +93,33 @@ ui <- page_navbar(
     
     nav_panel("Explore Data",
             
-              #   
-              # card(card_body(
-              #   strong("Unique PIT Tags, Current Spawn Year: "),
-              #   textOutput("unique_value")
-              # )),
               
               layout_columns(
                 
                 value_box(
-                  "Spawn Year to date",
-                  nrow(individuals.dat)
+                  title="Spawn Year to date",
+                  value=nrow(individuals.dat),
+                  showcase=fa("fish-fins")
                   
                 ),
                 
                 value_box(
-                  "New in the Last Week",
-                  nrow(lastweek)
+                  title="New in the Last Week",
+                  value=nrow(lastweek),
+                  showcase=bs_icon("graph-up-arrow")
                   
                 ),
                 
                 value_box(
                   
-                  "Estimated Percent of Run Complete",
-                  str_c(today_run$median_percentcomplete, "%",
-                        sep=" ")
+                  title="Estimated Percent of Run Complete",
+                  value=str_c(today_run$median_percentcomplete, "%",
+                        sep=" "),
+                  showcase = bs_icon("circle-half"),
+                  p(str_c("Range:",str_c(today_run$min_percentcomplete,"%",sep=" "),
+                          "-",
+                          str_c(today_run$max_percentcomplete,"%",sep=" "),
+                          sep=" "))
                   
                 )
                 
@@ -123,19 +129,21 @@ ui <- page_navbar(
                
               layout_columns(
                 
-                col_widths = c(6,6,12),
+                col_widths = c(6,6,6),
                    
               card(card_header("Discharge at Stites"),
                                plotlyOutput("flow_plot"),
+                   full_screen = T),
+              
+              card(card_header("Year-to-date Totals"),
+                   plotlyOutput("comp_plot"),
                    full_screen = T),
                 
              card(card_header("Unique Fish In"),
                   plotlyOutput("entry_plot"),
                   full_screen = T),
              
-             card(card_header("Year-to-date Totals"),
-                  plotlyOutput("comp_plot"),
-                  full_screen = T)
+       
              
               )
               )
@@ -159,7 +167,7 @@ server <- function(input,output,session){
       geom_line(aes(text=str_c(" Date:",date,
                                "<br>","Mean Discharge (cfs): ",mean_discharge,
                                sep=" ")))+
-      scale_x_date(date_breaks = "1 month", date_labels="%b %Y",
+      scale_x_date(date_breaks = "1 month", date_labels="%b",
                    limits=c(as.Date(plot_min),as.Date(plot_max)))+
       theme_bw()+
       labs(x="",y="Mean Discharge at Stites")
@@ -190,7 +198,7 @@ server <- function(input,output,session){
                    text=str_c(" Date:",sf_final_date,
                               "<br>","Number Steelhead Entered:",n,
                               sep=" ")))+
-      scale_x_date(date_breaks = "1 month", date_labels="%b %Y",
+      scale_x_date(date_breaks = "1 month", date_labels="%b",
                    limits=c(as.Date(plot_min),as.Date(plot_max)))+
       theme_bw()+
       labs(x="Latest entry date to SF Clearwater",
