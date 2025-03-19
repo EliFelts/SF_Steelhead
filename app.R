@@ -8,6 +8,7 @@ library(conflicted)
 library(plotly)
 library(arrow)
 library(dataRetrieval)
+library(viridis)
 
 conflicts_prefer(DT::renderDT,
                  dplyr::filter,
@@ -27,6 +28,30 @@ alldaily.dat <- read_feather("data/alldaily")
 
 projections.dat <- read_feather("data/projections")
 
+# calculate estimate of how much of the run
+# is complete
+
+run_stats <- alldaily.dat %>% 
+  filter(spawn_year<2025) %>% 
+  group_by(spawn_year) %>% 
+  mutate(total_n=sum(n),
+         prop_complete=daily_cumulative_n/total_n) %>% 
+  group_by(dummy_sfentry_date) %>% 
+  summarize(median_percentcomplete=round(median(prop_complete)*100))
+
+today_dummy <- tibble(date=today()) %>% 
+  mutate(doy=yday(date),
+         dummy=if_else(doy<182,
+                       as.Date(doy,origin="1977-12-31"),
+                       as.Date(doy,origin="1976-12-31"))) %>% 
+  pull(dummy)
+
+
+today_run <- run_stats %>% 
+  filter(dummy_sfentry_date==today_dummy)
+
+# calculate how many new tags passed in the last week
+
 lastweek <- individuals.dat %>% 
   filter(sf_entry_final>=today()-days(7))
 
@@ -39,7 +64,7 @@ user_dates <-
               label="Choose a Date Range",
               min=slider_min,
               max=today(),
-              value=c(today()-months(1),today()))
+              value=c(as_date("2025-01-01"),today()))
 
 
 
@@ -56,7 +81,6 @@ ui <- page_navbar(
         
         "Explore Data",
         
-        "Options",
         user_dates
         
       )
@@ -77,12 +101,19 @@ ui <- page_navbar(
                   "Spawn Year to date",
                   nrow(individuals.dat)
                   
-                  
                 ),
                 
                 value_box(
                   "New in the Last Week",
                   nrow(lastweek)
+                  
+                ),
+                
+                value_box(
+                  
+                  "Estimated Percent of Run Complete",
+                  str_c(today_run$median_percentcomplete, "%",
+                        sep=" ")
                   
                 )
                 
@@ -91,6 +122,8 @@ ui <- page_navbar(
               page_fillable(
                
               layout_columns(
+                
+                col_widths = c(6,6,12),
                    
               card(card_header("Discharge at Stites"),
                                plotlyOutput("flow_plot"),
@@ -207,10 +240,11 @@ server <- function(input,output,session){
                                 "Projected",projection_category,round(sy_total),
                                 sep=" ")))+
       theme_bw()+
+      scale_color_viridis(discrete = T)+
       scale_x_date(date_breaks = "1 month", date_labels="%b",
                    limits=c(as.Date(plot_lim.dat$plot_min),as.Date(plot_lim.dat$plot_max)))+
       labs(x="Date of entry to South Fork Clearwater",
-           y="Percent of Run Completed",
+           y="# PIT Tags in SF, Year-To-Date",
            color="")
     comp.plot
     
