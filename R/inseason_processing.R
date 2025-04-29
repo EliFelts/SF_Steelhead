@@ -316,26 +316,66 @@ write_feather(projected_pts,"data/projections")
 
 ## get tooltip for points also
 
-# cumplot.all <- alldaily %>% 
-#   ggplot(aes(x=dummy_sfentry_date,y=daily_cumulative_n,
-#              group=spawn_year,color=as.factor(spawn_year)))+
-#   geom_line(aes(text=str_c(" Date:",format(dummy_sfentry_date, "%b %d"),
-#                            "<br>",
-#                            "Spawn Year:",spawn_year,
-#                            "<br>",
-#                            "Number In:",round(daily_cumulative_n),sep=" ")))+
-#   geom_point(data=projected_pts,
-#              aes(x=dummy_sfentry_date,y=sy_total,
-#                  text=str_c(" Date:",format(dummy_sfentry_date, "%b %d"),
-#                             "<br>",
-#                             "Projected",projection_category,round(sy_total),
-#                             sep=" ")))+
-#   theme_bw()+
-#   scale_x_date(date_breaks = "1 month", date_labels="%b")+
-#   labs(x="Date of entry to South Fork Clearwater",
-#        y="Percent of Run Completed",
-#        color="")
-# cumplot.all
-# 
-# ggplotly(cumplot.all, tooltip=c("text","label")) %>% 
-#   layout(hovermode="x")
+cumplot.all <- alldaily %>%
+  ggplot(aes(x=dummy_sfentry_date,y=daily_cumulative_n,
+             group=spawn_year,color=as.factor(spawn_year)))+
+  geom_line(aes(text=str_c(" Date:",format(dummy_sfentry_date, "%b %d"),
+                           "<br>",
+                           "Spawn Year:",spawn_year,
+                           "<br>",
+                           "Number In:",round(daily_cumulative_n),sep=" ")))+
+  geom_point(data=projected_pts,
+             aes(x=dummy_sfentry_date,y=sy_total,
+                 text=str_c(" Date:",format(dummy_sfentry_date, "%b %d"),
+                            "<br>",
+                            "Projected",projection_category,round(sy_total),
+                            sep=" ")))+
+  theme_bw()+
+  scale_x_date(date_breaks = "1 month", date_labels="%b")+
+  labs(x="Date of entry to South Fork Clearwater",
+       y="Percent of Run Completed",
+       color="")
+cumplot.all
+
+ggplotly(cumplot.all, tooltip=c("text","label")) %>%
+  layout(hovermode="x")
+
+flow.plot <- stites.dat %>% 
+  mutate(date=as_date(date),
+         day_of_year=yday(date),
+         dummy_sfentry_date=if_else(day_of_year<182,
+                                    as.Date(day_of_year,origin="1977-12-31"),
+                                    as.Date(day_of_year,origin="1976-12-31"))) %>% 
+  ggplot(aes(x=dummy_sfentry_date,y=mean_discharge,group=group))+
+  geom_line(aes(text=str_c(" Date:",date,
+                           "<br>","Mean Discharge (cfs): ",mean_discharge,
+                           sep=" ")))+
+  scale_x_date(date_breaks = "1 month", date_labels="%b")+
+  theme_bw()+
+  labs(x="",y="Mean Discharge at Stites")
+flow.plot
+
+
+comp_plotly <- ggplotly(cumplot.all,tooltip=c("text")) %>% 
+  layout(showlegend=T,hovermode="x unified")
+
+flow_plotly <- ggplotly(flow.plot,tooltip=c("text")) %>% 
+  layout(showlegend=T,
+         hovermode="x unified")
+
+
+plotly_combined <-  subplot(flow_plotly,p1_plotly,
+                            nrows=2,shareX = T,
+                            titleY=T)%>% 
+  layout(hovermode="x",
+         legend=list(
+           x=0.5,
+           y=-0.2,
+           xanchor="center",
+           yanchor="top",
+           orientation="h"
+         ))
+plotly_combined
+
+subplot(ggplotly(cumplot.all),ggplotly(flow.plot),nrows=2,
+        shareX=T) 
