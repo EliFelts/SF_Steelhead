@@ -61,7 +61,7 @@ lastweek <- individuals.dat %>%
 
 # make the slider input for date range
 
-slider_min <- as.Date(min(individuals.dat$sf_entry_final))
+slider_min <- as_date(min(individuals.dat$sf_entry_final))
 
 user_dates <-     
   sliderInput(inputId = "user_dates",
@@ -167,9 +167,10 @@ server <- function(input,output,session){
       geom_line(aes(text=str_c(" Date:",date,
                                "<br>","Mean Discharge (cfs): ",mean_discharge,
                                sep=" ")))+
-      scale_x_date(date_breaks = "1 month", date_labels="%b",
+      scale_x_date(date_breaks = "1 week", date_labels="%b %d",
                    limits=c(as.Date(plot_min),as.Date(plot_max)))+
       theme_bw()+
+      theme(axis.text.x=element_text(angle=45,hjust=1))+
       labs(x="",y="Mean Discharge at Stites")
     
   })
@@ -198,9 +199,10 @@ server <- function(input,output,session){
                    text=str_c(" Date:",sf_final_date,
                               "<br>","Number Steelhead Entered:",n,
                               sep=" ")))+
-      scale_x_date(date_breaks = "1 month", date_labels="%b",
+      scale_x_date(date_breaks = "1 week", date_labels="%b %d",
                    limits=c(as.Date(plot_min),as.Date(plot_max)))+
       theme_bw()+
+      theme(axis.text.x=element_text(angle=45,hjust=1))+
       labs(x="Latest entry date to SF Clearwater",
            y="Number of unique PIT-Tagged Steelhead")
     
@@ -249,8 +251,9 @@ server <- function(input,output,session){
                                 sep=" ")))+
       theme_bw()+
       scale_color_viridis(discrete = T)+
-      scale_x_date(date_breaks = "1 month", date_labels="%b",
+      scale_x_date(date_breaks = "1 week", date_labels="%b %d",
                    limits=c(as.Date(plot_lim.dat$plot_min),as.Date(plot_lim.dat$plot_max)))+
+      theme(axis.text.x=element_text(angle=45,hjust=1))+
       labs(x="Date of entry to South Fork Clearwater",
            y="# PIT Tags in SF, Year-To-Date",
            color="")

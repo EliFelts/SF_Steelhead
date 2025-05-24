@@ -142,9 +142,20 @@ juv.filter <- juv.dat1  %>%
 int.complete <- inseason.int %>% 
   filter(life_stage=="Adult") %>% 
   rename(mark_stage=life_stage) %>% 
-  bind_rows(juv.filter)
+  bind_rows(juv.filter) %>% 
+  mutate(det_year=year(observation_date),
+         det_month=month(observation_date),
+         det_spawn_year=ifelse(det_month>6,(det_year+1),
+                           det_year),
+         sf_sy_det=ifelse(det_spawn_year==2025,T,F))
 
 # now summarize relevant values
+
+# need to also classify whether detections
+# were during the spawn year so can assign
+# the appropriate estimated entry date if a juvenile
+# dings then comes back years later and doesn't 
+# hit the lower arrays
 
 sf_individuals.summary <- int.complete %>% 
   mutate(sf=ifelse(observation_sitecode %in% sf_logical,TRUE,
@@ -153,11 +164,13 @@ sf_individuals.summary <- int.complete %>%
                          TRUE,FALSE)) %>% 
   group_by(pit_id) %>% 
   summarize(lgr_final=last(observation_datetime[observation_sitecode=="GRA"]),
-            sf_first=first(observation_datetime[sf==TRUE]),
+            sf_first=first(observation_datetime[sf==TRUE&sf_sy_det==TRUE]),
             sf_entry_final=last(observation_datetime[sf_entry==TRUE]),
             sf_diff=as.numeric(sf_entry_final-sf_first,units="days"),
             length_mm=mean(length_mm,na.rm=T),
-            mark_stage=first(mark_stage))
+            mark_stage=first(mark_stage)) %>% 
+  mutate(sf_entry_final=if_else(is.na(sf_entry_final),sf_first,sf_entry_final),
+         sf_diff=as.numeric(sf_entry_final-sf_first,units="days"))
 
 sf_entry.summary <- sf_individuals.summary %>% 
   mutate(sf_final_date=as_date(sf_entry_final)) %>% 
@@ -220,7 +233,7 @@ complete_ind <- read_feather("data/completedyrs_individual") %>%
   filter(spawn_year>=2018,spawn_year<first(sf_entry.summary$spawn_year)) %>% 
   mutate()
 
-complete_daily <- read_feather("data/completedyrs_daily") %>% 
+complete_daily <- read_feather("data/completedyrs_daily")# %>% 
   filter(spawn_year>=2018,spawn_year<first(sf_entry.summary$spawn_year)) %>% 
   ungroup() %>% 
   complete(sf_final_date=seq(as_date("2017-07-01"),as_date("2024-06-30"),
@@ -313,69 +326,3 @@ write_feather(projected_pts,"data/projections")
 
 
 # move this to Shiny app.
-
-## get tooltip for points also
-
-cumplot.all <- alldaily %>%
-  ggplot(aes(x=dummy_sfentry_date,y=daily_cumulative_n,
-             group=spawn_year,color=as.factor(spawn_year)))+
-  geom_line(aes(text=str_c(" Date:",format(dummy_sfentry_date, "%b %d"),
-                           "<br>",
-                           "Spawn Year:",spawn_year,
-                           "<br>",
-                           "Number In:",round(daily_cumulative_n),sep=" ")))+
-  geom_point(data=projected_pts,
-             aes(x=dummy_sfentry_date,y=sy_total,
-                 text=str_c(" Date:",format(dummy_sfentry_date, "%b %d"),
-                            "<br>",
-                            "Projected",projection_category,round(sy_total),
-                            sep=" ")))+
-  theme_bw()+
-  scale_x_date(date_breaks = "1 month", date_labels="%b")+
-  labs(x="Date of entry to South Fork Clearwater",
-       y="Percent of Run Completed",
-       color="")
-cumplot.all
-
-ggplotly(cumplot.all, tooltip=c("text","label")) %>%
-  layout(hovermode="x")
-
-flow.plot <- stites.dat %>% 
-  mutate(date=as_date(date),
-         day_of_year=yday(date),
-         dummy_sfentry_date=if_else(day_of_year<182,
-                                    as.Date(day_of_year,origin="1977-12-31"),
-                                    as.Date(day_of_year,origin="1976-12-31"))) %>% 
-  ggplot(aes(x=dummy_sfentry_date,y=mean_discharge,group=group))+
-  geom_line(aes(text=str_c(" Date:",date,
-                           "<br>","Mean Discharge (cfs): ",mean_discharge,
-                           sep=" ")))+
-  scale_x_date(date_breaks = "1 month", date_labels="%b")+
-  theme_bw()+
-  labs(x="",y="Mean Discharge at Stites")
-flow.plot
-
-
-comp_plotly <- ggplotly(cumplot.all,tooltip=c("text")) %>% 
-  layout(showlegend=T,hovermode="x unified")
-
-flow_plotly <- ggplotly(flow.plot,tooltip=c("text")) %>% 
-  layout(showlegend=T,
-         hovermode="x unified")
-
-
-plotly_combined <-  subplot(flow_plotly,p1_plotly,
-                            nrows=2,shareX = T,
-                            titleY=T)%>% 
-  layout(hovermode="x",
-         legend=list(
-           x=0.5,
-           y=-0.2,
-           xanchor="center",
-           yanchor="top",
-           orientation="h"
-         ))
-plotly_combined
-
-subplot(ggplotly(cumplot.all),ggplotly(flow.plot),nrows=2,
-        shareX=T) 
